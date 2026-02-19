@@ -1,0 +1,383 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>จดทะเบียน - ตรวจสอบสถานะตั้งเบิก</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Thai:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        * { font-family: 'Noto Sans Thai', sans-serif; }
+        .table-container { overflow-x: auto; }
+        .table-scroll-top { height: 17px; overflow-x: auto; overflow-y: hidden; background: #f1f5f9; border-bottom: 1px solid #e2e8f0; }
+        .table-scroll-top-inner { height: 1px; }
+        table.data-table { border-collapse: collapse; width: 100%; min-width: 1200px; }
+        table.data-table th, table.data-table td { border: 1px solid #e2e8f0; padding: 0.5rem 0.75rem; text-align: left; min-width: 4rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 20rem; }
+        table.data-table th { background: #1e293b; color: #fff; font-weight: 600; }
+        table.data-table tr:nth-child(even) { background: #f8fafc; }
+        table.data-table tr:hover { background: #f1f5f9; }
+        table.data-table td input.cell-edit, table.data-table td textarea.cell-edit { width: 100%; min-width: 4rem; border: 1px solid #cbd5e1; padding: 0.25rem 0.5rem; border-radius: 0.25rem; box-sizing: border-box; }
+        table.data-table td[data-col="หมายเหตุ"] textarea.cell-edit { min-height: 5rem; resize: vertical; }
+        table.data-table td[data-col="หมายเหตุ"] { white-space: normal; max-width: none; overflow: visible; min-width: 18rem; }
+        table.data-table th[data-col="เบอร์ติดต่อ"], table.data-table td[data-col="เบอร์ติดต่อ"] { white-space: normal; max-width: none; overflow: visible; text-overflow: clip; min-width: 12rem; }
+        table.data-table td[data-col="เบอร์ติดต่อ"] input.cell-edit { min-width: 11rem; }
+        table.data-table th[data-col="สถานะ"], table.data-table td[data-col="สถานะ"] { white-space: normal; max-width: none; overflow: visible; text-overflow: clip; min-width: 10rem; }
+        table.data-table td[data-col="สถานะ"] input.cell-edit { min-width: 10rem; }
+        table.data-table th[data-col="แบรนด์รถ"], table.data-table td[data-col="แบรนด์รถ"],
+        table.data-table th[data-col="ยี่ห้อ"], table.data-table td[data-col="ยี่ห้อ"] { min-width: 10rem; }
+        table.data-table .cell-date { min-width: 7rem; white-space: nowrap; }
+    </style>
+</head>
+<body class="bg-gray-50 min-h-screen text-slate-800">
+    <main class="max-w-7xl mx-auto p-6">
+            <div class="mb-6">
+                <a href="/data-table" class="inline-flex items-center gap-1 text-gray-600 hover:text-gray-900 text-sm mb-3">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"/></svg>
+                    กลับ
+                </a>
+                <div class="border-l-4 border-orange-500 pl-4">
+                    <h1 id="viewerTitle" class="text-2xl font-semibold text-gray-800">ตรวจสอบสถานะตั้งเบิก</h1>
+                    <p id="viewerSubtitle" class="text-gray-600 text-sm mt-1">แสดงเฉพาะรายการที่มีสถานะ "ตั้งเบิก" — รวม <span id="subtitleRowCount">0</span> แถว</p>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                <div class="bg-white rounded-xl border border-gray-200 p-4 shadow-sm flex items-start gap-3">
+                    <div class="w-10 h-10 rounded-lg bg-orange-100 flex items-center justify-center flex-shrink-0">
+                        <svg class="w-5 h-5 text-orange-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h16M4 18h16"/></svg>
+                    </div>
+                    <div>
+                        <p class="text-sm text-gray-500">รวมทั้งหมด</p>
+                        <p id="cardTotal" class="text-lg font-semibold text-gray-800">0 แถว</p>
+                    </div>
+                </div>
+                <div class="bg-white rounded-xl border border-gray-200 p-4 shadow-sm flex items-start gap-3">
+                    <div class="w-10 h-10 rounded-lg bg-orange-100 flex items-center justify-center flex-shrink-0">
+                        <svg class="w-5 h-5 text-orange-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"/></svg>
+                    </div>
+                    <div>
+                        <p class="text-sm text-gray-500">กรองตามสถานะ</p>
+                        <p id="cardStatus" class="text-base font-medium text-gray-800">ตั้งเบิก</p>
+                    </div>
+                </div>
+                <div class="bg-white rounded-xl border border-gray-200 p-4 shadow-sm flex items-start gap-3">
+                    <div class="w-10 h-10 rounded-lg bg-orange-100 flex items-center justify-center flex-shrink-0">
+                        <svg class="w-5 h-5 text-orange-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h18M3 14h18m-9-4v8m-7 0h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>
+                    </div>
+                    <div>
+                        <p class="text-sm text-gray-500">ตาราง</p>
+                        <p class="text-base font-medium text-gray-800">RegisterReport_2569</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="bg-white rounded-xl border border-gray-200 shadow-sm p-4 mb-4 flex flex-wrap items-center gap-3">
+                <div class="flex-1 min-w-[200px] relative">
+                    <svg class="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+                    <input type="text" id="searchInput" placeholder="ค้นหา ชื่อSales, เลขที่ใบกำกับภาษี, ชื่อลูกค้า" class="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-orange-500 focus:border-orange-500">
+                </div>
+                <label class="flex items-center gap-2 text-sm text-gray-700">
+                    <span>เรียงตามวันที่จด:</span>
+                    <select id="sortDateReg" class="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-orange-500 focus:border-orange-500 bg-white">
+                        <option value="">— ไม่เรียง —</option>
+                        <option value="asc">เก่า → ใหม่</option>
+                        <option value="desc">ใหม่ → เก่า</option>
+                    </select>
+                </label>
+                <button id="btnImport" type="button" class="inline-flex items-center gap-2 bg-orange-500 hover:bg-orange-600 text-white px-4 py-2.5 rounded-lg font-medium text-sm shadow-sm disabled:opacity-50 disabled:cursor-not-allowed" disabled>
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/></svg>
+                    อัพโหลดข้อมูล
+                </button>
+            </div>
+
+            <div id="infoBox" class="bg-blue-50 border border-blue-200 rounded-lg px-4 py-2 mb-4 text-sm text-blue-700 hidden"></div>
+            <div id="errorBox" class="bg-red-50 border border-red-200 rounded-lg px-4 py-2 mb-4 text-sm text-red-700 hidden"></div>
+
+            <div id="dataSection" class="bg-white rounded-xl shadow-md overflow-hidden hidden">
+                <div class="px-4 py-2 border-b border-gray-200 flex flex-wrap items-center justify-between gap-2 bg-gray-50">
+                    <span id="tableTitle" class="font-medium text-slate-800">dbo.RegisterReport_2569</span>
+                    <div class="flex items-center gap-2">
+                        <button id="btnPrev" class="px-3 py-1.5 rounded-lg bg-gray-200 hover:bg-gray-300 disabled:opacity-50 text-sm" disabled>ก่อนหน้า</button>
+                        <span id="pageInfo" class="text-gray-600"></span>
+                        <button id="btnNext" class="px-3 py-1.5 rounded-lg bg-gray-200 hover:bg-gray-300 disabled:opacity-50 text-sm" disabled>ถัดไป</button>
+                    </div>
+                </div>
+                <div id="tableScrollTop" class="table-scroll-top" style="display:none;"><div id="tableScrollTopInner" class="table-scroll-top-inner"></div></div>
+                <div id="tableContainer" class="table-container">
+                    <table id="dataTable" class="data-table">
+                        <thead id="tableHead"></thead>
+                        <tbody id="tableBody"></tbody>
+                    </table>
+                </div>
+            </div>
+    </main>
+
+    <script>
+        const LIMIT = 200;
+        const STATUS_FILTER = 'ตั้งเบิก';
+        const FIXED_SCHEMA = 'dbo';
+        const FIXED_TABLE = 'RegisterReport_2569';
+        let currentOffset = 0, totalRows = 0;
+        let loadedData = [], loadedColumns = [];
+        let primaryKey = [];
+        const EDITABLE_MAIN_COLUMNS = ['สถานะ', 'ทะเบียน', 'วันที่จด', 'หมายเหตุ', 'แจ้งจำหน่าย', 'พรบ', 'ชุดไฟแนนซ์', 'ปิดแฟ้ม', 'จังหวัดที่จด', 'เบอร์ติดต่อ', 'วันที่รับแจ้งจำหน่าย', 'ชุดครบ'];
+        const DATE_EDIT_COLUMNS = ['วันที่จด', 'วันที่รับแจ้งจำหน่าย'];
+        const TEXTAREA_EDIT_COLUMNS = ['หมายเหตุ'];
+
+        const dataSection = document.getElementById('dataSection');
+        const tableTitle = document.getElementById('tableTitle');
+        const tableHead = document.getElementById('tableHead');
+        const tableBody = document.getElementById('tableBody');
+        const btnPrev = document.getElementById('btnPrev');
+        const btnNext = document.getElementById('btnNext');
+        const pageInfo = document.getElementById('pageInfo');
+        const infoBox = document.getElementById('infoBox');
+        const errorBox = document.getElementById('errorBox');
+        const searchInput = document.getElementById('searchInput');
+        let filteredData = [];
+
+        function formatDateDisplay(iso) {
+            if (!iso || !String(iso).trim()) return '';
+            const s = String(iso).trim().slice(0, 10);
+            if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+            const [y, m, d] = s.split('-');
+            return d + '/' + m + '/' + y;
+        }
+        function updateViewerHeader() {
+            const subEl = document.getElementById('subtitleRowCount');
+            const cardTotalEl = document.getElementById('cardTotal');
+            if (subEl) subEl.textContent = (totalRows || 0).toLocaleString();
+            if (cardTotalEl) cardTotalEl.textContent = (totalRows || 0).toLocaleString() + ' แถว';
+        }
+        function applySearchFilter() {
+            const q = (searchInput && searchInput.value) ? searchInput.value.trim().toLowerCase() : '';
+            if (!q) { filteredData = loadedData.slice(); return; }
+            const cols = loadedColumns || [];
+            const searchCols = ['ชื่อSales', 'เลขที่ใบกำกับภาษี', 'ชื่อลูกค้า'].filter(c => cols.indexOf(c) >= 0);
+            filteredData = loadedData.filter(row => searchCols.some(col => {
+                const v = row[col];
+                return v != null && String(v).toLowerCase().indexOf(q) >= 0;
+            }));
+        }
+        function showError(msg) {
+            errorBox.textContent = msg;
+            errorBox.classList.remove('hidden');
+            infoBox.classList.add('hidden');
+        }
+        function showInfo(msg) {
+            infoBox.textContent = msg;
+            infoBox.classList.remove('hidden');
+            errorBox.classList.add('hidden');
+        }
+        function hideMessages() {
+            infoBox.classList.add('hidden');
+            errorBox.classList.add('hidden');
+        }
+
+        async function loadTableData(offset) {
+            currentOffset = offset;
+            hideMessages();
+            try {
+                const qs = new URLSearchParams();
+                qs.set('limit', String(LIMIT));
+                qs.set('offset', String(offset));
+                qs.set('statusFilter', STATUS_FILTER);
+                const url = '/api/table/' + encodeURIComponent(FIXED_SCHEMA) + '/' + encodeURIComponent(FIXED_TABLE) + '?' + qs.toString();
+                const res = await fetch(url);
+                const json = await res.json();
+                if (!res.ok) throw new Error(json.detail || 'โหลดข้อมูลไม่สำเร็จ');
+                totalRows = json.total_rows;
+                const cols = json.columns;
+                const data = json.data;
+                loadedData = data.map(r => ({ ...r, _edited: false }));
+                loadedColumns = cols.map(c => c.name);
+                primaryKey = json.primary_key || (loadedColumns.indexOf('Id') >= 0 ? ['Id'] : []);
+                tableTitle.textContent = FIXED_SCHEMA + '.' + FIXED_TABLE;
+                applySearchFilter();
+                updateViewerHeader();
+                tableHead.innerHTML = '<tr>' + cols.map(c => '<th data-col="' + escapeAttr(c.name) + '">' + escapeHtml(c.name) + '</th>').join('') + '</tr>';
+                renderMainTableBody();
+                updateImportButton();
+                syncTableScrollBars();
+                const from = offset + 1;
+                const to = Math.min(offset + LIMIT, totalRows);
+                pageInfo.textContent = 'แสดง ' + from + '-' + to + ' จาก ' + totalRows;
+                btnPrev.disabled = offset === 0;
+                btnNext.disabled = offset + LIMIT >= totalRows;
+                dataSection.classList.remove('hidden');
+                setTimeout(syncTableScrollBars, 50);
+            } catch (e) {
+                showError(e.message);
+            }
+        }
+
+        function toDateOnly(v) {
+            if (v == null || v === '') return '';
+            const s = String(v).trim();
+            if (/^\d{4}-\d{2}-\d{2}(T|$)/.test(s)) return s.slice(0, 10);
+            return s;
+        }
+        function formatCell(v, col) {
+            if (v == null) return '<span class="text-slate-400">NULL</span>';
+            const s = String(v);
+            const dateOnly = toDateOnly(s);
+            const isDate = dateOnly !== s || (col && (col.includes('วันที่') || DATE_EDIT_COLUMNS.indexOf(col) >= 0));
+            const display = isDate && dateOnly ? dateOnly : s;
+            const escaped = display.length > 100 ? escapeHtml(display.slice(0, 100)) + '…' : escapeHtml(display);
+            return isDate && dateOnly ? '<span class="cell-date">' + escaped + '</span>' : escaped;
+        }
+        function escapeHtml(s) {
+            const div = document.createElement('div');
+            div.textContent = s;
+            return div.innerHTML;
+        }
+        function escapeAttr(s) {
+            return String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        }
+        function getMainTableRows() {
+            if (searchInput && searchInput.value && searchInput.value.trim() && filteredData && filteredData.length >= 0) return filteredData;
+            return loadedData || [];
+        }
+        let tableScrollBarsSynced = false;
+        function syncTableScrollBars() {
+            const tableContainer = document.getElementById('tableContainer');
+            const tableScrollTop = document.getElementById('tableScrollTop');
+            const tableScrollTopInner = document.getElementById('tableScrollTopInner');
+            if (!tableContainer || !tableScrollTop || !tableScrollTopInner) return;
+            if (!tableScrollBarsSynced) {
+                tableScrollBarsSynced = true;
+                tableContainer.addEventListener('scroll', function() { tableScrollTop.scrollLeft = tableContainer.scrollLeft; });
+                tableScrollTop.addEventListener('scroll', function() { tableContainer.scrollLeft = tableScrollTop.scrollLeft; });
+            }
+            requestAnimationFrame(function() {
+                tableScrollTopInner.style.width = tableContainer.scrollWidth + 'px';
+                tableScrollTop.style.display = (tableContainer.scrollWidth > tableContainer.clientWidth) ? 'block' : 'none';
+            });
+        }
+
+        function renderMainTableBody() {
+            const cols = loadedColumns;
+            if (!cols || !cols.length) return;
+            let rows = getMainTableRows().slice();
+            const sortSelect = document.getElementById('sortDateReg');
+            const sortOrder = sortSelect ? sortSelect.value : '';
+            if (sortOrder && cols.indexOf('วันที่จด') >= 0) {
+                rows.sort(function(a, b) {
+                    const va = a['วันที่จด'] != null ? String(a['วันที่จด']).trim() : '';
+                    const vb = b['วันที่จด'] != null ? String(b['วันที่จด']).trim() : '';
+                    if (va === vb) return 0;
+                    if (!va) return 1;
+                    if (!vb) return -1;
+                    return sortOrder === 'asc' ? va.localeCompare(vb) : vb.localeCompare(va);
+                });
+            }
+            if (rows.length === 0) {
+                tableBody.innerHTML = '<tr><td colspan="' + cols.length + '" class="text-center text-slate-500 py-4">ไม่มีข้อมูลสถานะตั้งเบิก</td></tr>';
+                return;
+            }
+            const editableSet = new Set(EDITABLE_MAIN_COLUMNS);
+            const dateEditSet = new Set(DATE_EDIT_COLUMNS);
+            const textareaEditSet = new Set(TEXTAREA_EDIT_COLUMNS);
+            const fragment = document.createDocumentFragment();
+            rows.forEach(function(row) {
+                const rowIndex = loadedData.indexOf(row);
+                const tr = document.createElement('tr');
+                cols.forEach(function(col) {
+                    const td = document.createElement('td');
+                    td.setAttribute('data-col', col);
+                    const val = row[col];
+                    if (editableSet.has(col)) {
+                        if (textareaEditSet.has(col)) {
+                            const ta = document.createElement('textarea');
+                            ta.className = 'cell-edit';
+                            ta.rows = 2;
+                            ta.value = val != null ? String(val) : '';
+                            ta.dataset.rowIndex = String(rowIndex);
+                            ta.dataset.col = col;
+                            td.appendChild(ta);
+                        } else {
+                            const input = document.createElement('input');
+                            if (dateEditSet.has(col)) {
+                                input.type = 'date';
+                                input.className = 'cell-edit cell-edit-date';
+                                input.value = toDateOnly(val);
+                            } else {
+                                input.type = 'text';
+                                input.className = 'cell-edit';
+                                input.value = val != null ? String(val) : '';
+                            }
+                            input.dataset.rowIndex = String(rowIndex);
+                            input.dataset.col = col;
+                            td.appendChild(input);
+                        }
+                    } else {
+                        td.innerHTML = formatCell(val, col);
+                    }
+                    tr.appendChild(td);
+                });
+                fragment.appendChild(tr);
+            });
+            tableBody.innerHTML = '';
+            tableBody.appendChild(fragment);
+            function bindCellEdit(el) {
+                el.addEventListener('input', function() {
+                    const i = parseInt(this.dataset.rowIndex, 10);
+                    const col = this.dataset.col;
+                    if (loadedData[i]) {
+                        loadedData[i][col] = this.value;
+                        loadedData[i]._edited = true;
+                    }
+                });
+            }
+            tableBody.querySelectorAll('input.cell-edit').forEach(bindCellEdit);
+            tableBody.querySelectorAll('textarea.cell-edit').forEach(bindCellEdit);
+        }
+
+        const btnImport = document.getElementById('btnImport');
+        function updateImportButton() {
+            btnImport.disabled = !loadedData.length;
+        }
+
+        if (searchInput) {
+            searchInput.addEventListener('input', function() {
+                applySearchFilter();
+                renderMainTableBody();
+            });
+        }
+        const sortDateReg = document.getElementById('sortDateReg');
+        if (sortDateReg) sortDateReg.addEventListener('change', renderMainTableBody);
+        btnPrev.addEventListener('click', function() { loadTableData(Math.max(0, currentOffset - LIMIT)); });
+        btnNext.addEventListener('click', function() { loadTableData(currentOffset + LIMIT); });
+
+        btnImport.addEventListener('click', async function() {
+            if (loadedData.length === 0) return;
+            const hasEdited = loadedData.some(r => r._edited);
+            if (!hasEdited) { showInfo('ไม่มีข้อมูลที่แก้ไข'); return; }
+            const editedCount = loadedData.filter(r => r._edited).length;
+            if (!confirm('ต้องการอัปโหลดการแก้ไขลงฐานข้อมูลหรือไม่?\n\nแถวที่แก้ไข: ' + editedCount + ' แถว')) return;
+            btnImport.disabled = true;
+            try {
+                const existingRows = loadedData.map(r => { const row = { ...r }; delete row._edited; return row; });
+                const res = await fetch('/api/table/' + encodeURIComponent(FIXED_SCHEMA) + '/' + encodeURIComponent(FIXED_TABLE) + '/import-update', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ new_rows: [], existing_rows: existingRows }),
+                });
+                const json = await res.json();
+                if (!res.ok) throw new Error(json.detail || 'Import ไม่สำเร็จ');
+                showInfo(json.message || 'อัปเดตฐานข้อมูลเรียบร้อยแล้ว');
+                await loadTableData(currentOffset);
+            } catch (e) {
+                showError(e.message);
+            } finally {
+                updateImportButton();
+            }
+        });
+
+        document.addEventListener('DOMContentLoaded', function() {
+            updateViewerHeader();
+            loadTableData(0);
+        });
+    </script>
+</body>
+</html>
