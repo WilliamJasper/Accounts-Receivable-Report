@@ -149,7 +149,7 @@ export function calculateCommission({
         return sum + (rewardPerDay * d);
     }, 0);
 
-    const surplusTech = resultTech - totalTechRewards;
+    const surplusTech = Math.abs(resultTech - totalTechRewards);
 
     return {
         // Active tier values (used for downstream calculations)

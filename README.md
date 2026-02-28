@@ -1,38 +1,80 @@
 # Registered – ดูข้อมูล RegisterDB_2569
 
-เว็บสำหรับดูข้อมูลในฐานข้อมูล **RegisterDB_2569** บน SQL Server (เช่น ตาราง `dbo.RegisterReport_2569`)
+เว็บสำหรับดูข้อมูลในฐานข้อมูล **RegisterDB_2569** และ **OMODA** บน SQL Server
+
+## โครงสร้างโปรเจกต์
+
+- **Backend:** Python + FastAPI (API เท่านั้น)
+- **Frontend:** React (Vite + React Router + Tailwind)
 
 ## สิ่งที่ต้องมี
 
 - Python 3.10+
-- SQL Server (เช่น LAPTOP-2CN8L0R4\SQLEXPRESS) และฐานข้อมูล RegisterDB_2569
+- Node.js 18+ (สำหรับ Frontend)
+- SQL Server และฐานข้อมูล RegisterDB_2569, OMODA
 - ODBC Driver 17 for SQL Server
 
-## การติดตั้งและรัน
+## การติดตั้ง
+
+### Backend (Python)
 
 ```bash
-cd "c:\Users\Asus\Downloads\Registered"
 pip install -r requirements.txt
 ```
 
-ถ้าไม่ใช้ไฟล์ `.env` แอปจะใช้การเชื่อมต่อแบบ Trusted Connection ไปที่ `LAPTOP-2CN8L0R4\SQLEXPRESS` และฐานข้อมูล `RegisterDB_2569` โดยตรง
+คัดลอก `.env.example` เป็น `.env` แล้วตั้งค่า `DATABASE_URL` และ `OMODA_DATABASE_URL` (ถ้าต้องการ)
 
-ถ้าต้องการกำหนด connection เอง คัดลอก `.env.example` เป็น `.env` แล้วแก้ `DATABASE_URL` ให้ตรงกับเครื่องคุณ:
-
-```
-DATABASE_URL=Driver={ODBC Driver 17 for SQL Server};Server=LAPTOP-2CN8L0R4\SQLEXPRESS;Database=RegisterDB_2569;Trusted_Connection=yes;
-```
-
-จากนั้นรันแอป:
+### Frontend (React)
 
 ```bash
-python app.py
+cd frontend
+npm install
 ```
 
-เปิดเบราว์เซอร์ที่: **http://localhost:8000**
+## การรัน
+
+### โหมดพัฒนา (แยก Backend / Frontend)
+
+1. **รัน Backend (พอร์ต 8000):**
+   ```bash
+   python app.py
+   ```
+   หรือ `uvicorn app:app --reload --port 8000`
+
+2. **รัน Frontend (พอร์ต 5173):**
+   ```bash
+   cd frontend
+   npm run dev
+   ```
+
+เปิดเบราว์เซอร์ที่ **http://localhost:5173**  
+Frontend จะ proxy คำขอ `/api/*` ไปที่ Backend อัตโนมัติ
+
+### โหมด Production (เสิร์ฟรวมจาก Backend)
+
+1. Build Frontend:
+   ```bash
+   cd frontend
+   npm run build
+   ```
+
+2. รัน Backend:
+   ```bash
+   python app.py
+   ```
+
+เปิดเบราว์เซอร์ที่ **http://localhost:8000**  
+Backend จะเสิร์ฟไฟล์ static ของ React จาก `frontend/dist` และ route ทั้งหมดที่ไม่ใช่ `/api` จะได้หน้า SPA
 
 ## ฟีเจอร์
 
-- แสดงรายชื่อตารางใน RegisterDB_2569
-- เลือกตาราง (เช่น dbo.RegisterReport_2569) แล้วกดโหลดข้อมูล
-- แสดงข้อมูลแบบแบ่งหน้า (ก่อนหน้า / ถัดไป)
+- **สร้าง:** เลือกช่วงวันที่จดทะเบียน แล้วสร้างตาราง
+- **ตารางข้อมูล:** แสดงรายการจดทะเบียน
+- **ตรวจสอบสถานะตั้งเบิก:** แท็บ Claim Report (OMODA) และ ข้อมูลพนักงาน (ตาราง OFFICER) พร้อมโหลดข้อมูลและค้นหา
+
+## API หลัก
+
+- `GET /api/check-status/claim-report` – ดึง Claim Report จาก OMODA
+- `GET /api/check-status/officer` – ดึงรายชื่อพนักงานจาก OMODA (OFFICER)
+- `GET /api/tables` – รายชื่อตารางใน RegisterDB_2569
+- `GET /api/table/{schema}/{table}` – ข้อมูลตาราง (แบ่งหน้าได้)

@@ -1,6 +1,6 @@
 """
 Registered - Web viewer for SQL Server database RegisterDB_2569
-Backend: Python + FastAPI
+Backend: Python + FastAPI (API only; frontend = React)
 """
 import os
 from pathlib import Path
@@ -8,8 +8,8 @@ from datetime import datetime
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Query, Request
-from fastapi.responses import HTMLResponse
-from fastapi.templating import Jinja2Templates
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 import pyodbc
 
 load_dotenv()
@@ -41,10 +41,19 @@ def _ensure_edit_history_table():
     finally:
         conn.close()
 
-app = FastAPI(title="Registered - RegisterDB_2569 Viewer")
+app = FastAPI(title="Commission System - RegisterDB_2569 Viewer")
+
+# CORS สำหรับ Frontend (React) ที่รันคนละ origin
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173", "http://localhost:3000", "http://127.0.0.1:3000"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 BASE_DIR = Path(__file__).resolve().parent
-templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
+FRONTEND_DIST = BASE_DIR / "frontend" / "dist"
 
 # Connection string สำหรับ RegisterDB_2569
 def get_connection_string() -> str:
@@ -64,98 +73,214 @@ def get_connection():
     return pyodbc.connect(get_connection_string())
 
 
-@app.get("/", response_class=HTMLResponse)
-async def home(request: Request):
-    """หน้าแรกว่าง ๆ ก่อนเข้าสู่หน้าแสดงข้อมูล"""
-    return templates.TemplateResponse("home.html", {"request": request})
+def get_omoda_connection_string() -> str:
+    """Connection string สำหรับ OMODA (หน้าตรวจสอบสถานะตั้งเบิก)"""
+    url = os.getenv("OMODA_DATABASE_URL", "").strip()
+    if url:
+        return url
+    return (
+        "Driver={ODBC Driver 17 for SQL Server};"
+        "Server=LAPTOP-2CN8L0R4\\SQLEXPRESS;"
+        "Database=OMODA;"
+        "Trusted_Connection=yes;"
+    )
 
 
-@app.get("/viewer", response_class=HTMLResponse)
-async def index(request: Request):
-    """หน้าแสดงข้อมูลตารางใน RegisterDB_2569"""
-    return templates.TemplateResponse("index.html", {"request": request})
+def get_omoda_connection():
+    return pyodbc.connect(get_omoda_connection_string())
 
 
-@app.get("/data-table", response_class=HTMLResponse)
-async def data_table(request: Request):
-    """หน้าตารางข้อมูลจดทะเบียน (รูปแบบ 4 คอลัมน์: เลขที่ใบกำกับภาษี, ช่วงวันที่, ไฟแนนซ์, จังหวัดที่จดทะเบียน)"""
-    return templates.TemplateResponse("data-table.html", {"request": request})
+# SQL สำหรับ Claim Report จาก OMODA (JOB + CN + RETURN)
+# ใช้โครงเดียวกับ query ใน SSMS และเพิ่มทั้งชื่อคอลัมน์อังกฤษ/ไทย (สำหรับ Frontend + งานเอกสาร)
+CLAIM_REPORT_SQL = """
+SELECT 
+    XX.*,
+    CAST(ROUND(XX.TOTALNET,2) AS decimal(18,2)) AS [มูลค่าก่อนVAT],
+    CAST(ROUND(XX.TOTALNET * ISNULL(XX.VAT,0) / 100.0,2) AS decimal(18,2)) AS [ภาษี],
+    CAST(ROUND(
+        XX.TOTALNET + (XX.TOTALNET * ISNULL(XX.VAT,0) / 100.0)
+    ,2) AS decimal(18,2)) AS [ยอดรวมภาษี],
+    B.NAME1,
+    B.NAME2,
+    (B.NAME1+' '+B.NAME2) AS CUSNAM
+FROM (
+    /* 1. JOB */
+    SELECT
+        A.JOBNO, A.TAXNO, A.TAXDATE, A.JOBDATE, A.JOBTYP,
+        CASE WHEN (A.TAXNO='' OR A.TAXNO IS NULL) THEN A.CUSCOD ELSE C.CUSCOD END AS CUSCOD,
+        A.MDLCOD, A.STRNO, A.RLKILOMT, A.CAMPNO, A.STATUS, A.CLAIM,
+        SUM(A.SERVAMT) AS SERVNET, SUM(A.OILAMT) AS OILNET, SUM(A.OUTAMT) AS OUTNET,
+        SUM(A.COLAMT) AS COLRNET, SUM(A.PATAMT) AS PARTNET,
+        SUM(A.SERVAMT+A.OILAMT+A.OUTAMT+A.COLAMT+A.PATAMT) AS TOTALNET,
+        SUM(A.COS_SV) AS SERVCOS, SUM((FLOOR(A.COS_OL*100))/100) AS OILCOS,
+        SUM(A.COS_OU) AS OUTCOS, SUM(A.COS_CO) AS COLRCOS, SUM((FLOOR(A.COS_PT*100))/100) AS PARTCOS,
+        SUM(A.COS_SV+((FLOOR(A.COS_OL*100))/100)+A.COS_OU+A.COS_CO+((FLOOR(A.COS_PT*100))/100)) AS TOTALCOS,
+        SUM(A.SERVAMT-A.COS_SV) AS SERVPRF, SUM(A.OILAMT-((FLOOR(A.COS_OL*100))/100)) AS OILPRF,
+        SUM(A.OUTAMT-A.COS_OU) AS OUTPRF, SUM(A.COLAMT-A.COS_CO) AS COLRPRF,
+        SUM(A.PATAMT-((FLOOR(A.COS_PT*100))/100)) AS PARTPRF,
+        SUM((A.SERVAMT+A.OILAMT+A.OUTAMT+A.COLAMT+A.PATAMT)-(A.COS_SV+((FLOOR(A.COS_OL*100))/100)+A.COS_OU+A.COS_CO+((FLOOR(A.COS_PT*100))/100))) AS TOTALPRF,
+        C.Paytyp AS PTYPE, R.REGNO,
+        CASE WHEN D.VATTYPE IS NOT NULL THEN D.VATTYPE ELSE E.VATTYPE END AS VATTYPE,
+        CASE WHEN D.VAT IS NOT NULL THEN D.VAT ELSE E.VAT END AS VAT, '1' AS FLAG, D.CLAIMTYP
+    FROM VIEW_ANALYS01 A
+    LEFT JOIN L_TAXSAL C ON A.TAXNO=C.TAXNO
+    LEFT JOIN L_OTHINVOI D ON A.TAXNO<>'' AND A.TAXNO=D.TAXNO
+    LEFT JOIN L_JOBORDER E ON A.JOBNO=E.JOBNO
+    LEFT JOIN L_SVMAST R ON E.STRNO = R.STRNO
+    WHERE A.STATUS<>'C' AND A.JOBTYP LIKE ? AND A.LOCAT LIKE ? AND A.SERVCOD LIKE ? AND A.CAMPNO LIKE ? AND A.CUSCOD LIKE ?
+    AND ISDATE(A.TAXDATE)=1 AND CONVERT(datetime,A.TAXDATE) BETWEEN ? AND ?
+    GROUP BY A.JOBNO,A.TAXNO,A.TAXDATE,A.JOBDATE,A.JOBTYP,
+    CASE WHEN (A.TAXNO='' OR A.TAXNO IS NULL) THEN A.CUSCOD ELSE C.CUSCOD END,
+    A.MDLCOD,A.STRNO,A.RLKILOMT,A.CAMPNO,A.STATUS,C.Paytyp,R.REGNO,A.CLAIM,D.VATTYPE,D.VAT,E.VATTYPE,E.VAT,D.CLAIMTYP
+
+    UNION ALL
+
+    /* 2. CN */
+    SELECT
+        A.JOBNO,A.TAXNO,A.TAXDATE,A.JOBDATE,A.JOBTYP,C.CUSCOD,A.MDLCOD,E.STRNO,E.RLKILOMT,E.CAMPNO,E.STATUS,A.CLAIM,
+        SUM(-A.NETPRIC),0,0,0,0,SUM(-A.NETPRIC),0,0,0,0,0,0,SUM(-A.NETPRIC),0,0,0,0,SUM(-A.NETPRIC),
+        C.Paytyp,R.REGNO,E.VATTYPE,E.VAT,'2',''
+    FROM L_CN_SERV A JOIN L_TAXSAL C ON A.TAXNO=C.TAXNO
+    LEFT JOIN L_JOBORDER E ON A.JOBNO=E.JOBNO
+    LEFT JOIN L_SVMAST R ON E.STRNO = R.STRNO
+    WHERE C.CANDAT IS NULL AND A.JOBTYP LIKE ? AND A.LOCAT LIKE ? AND A.SERVCOD LIKE ? AND E.CAMPNO LIKE ? AND C.CUSCOD LIKE ?
+    AND ISDATE(A.TAXDATE)=1 AND CONVERT(datetime,A.TAXDATE) BETWEEN ? AND ? AND A.TAXNO<>''
+    GROUP BY A.JOBNO,A.TAXNO,A.TAXDATE,A.JOBDATE,A.JOBTYP,C.CUSCOD,A.MDLCOD,E.STRNO,E.RLKILOMT,E.CAMPNO,E.STATUS,C.Paytyp,R.REGNO,A.CLAIM,E.VATTYPE,E.VAT
+
+    UNION ALL
+
+    /* 3. RETURN */
+    SELECT
+        C.JOBNO,C.CREDNO,C.CREDDT,E.RECVDATE,E.REPTYPE,E.CUSCOD,E.MDLCOD,E.STRNO,E.RLKILOMT,E.CAMPNO,E.STATUS,'',
+        0,-SUM(A.NETPRC),0,0,-SUM(A.NETPRC),-SUM(A.NETPRC),0,-SUM(A.COST*A.QTYRTN),0,0,-SUM(A.COST*A.QTYRTN),-SUM(A.COST*A.QTYRTN),
+        0,-SUM(A.NETPRC-(A.COST*A.QTYRTN)),0,0,-SUM(A.NETPRC-(A.COST*A.QTYRTN)),-SUM(A.NETPRC-(A.COST*A.QTYRTN)),
+        B.PTYPE,R.REGNO,E.VATTYPE,E.VAT,'2',''
+    FROM L_RT_TRAN A JOIN L_RT_INVOI C ON A.RTNNO=C.RTNNO
+    LEFT JOIN L_AR_SERV B ON C.JOBNO=B.JOBNO AND C.TAXREFNO=B.DEVNO
+    LEFT JOIN L_JOBORDER E ON C.JOBNO=E.JOBNO
+    LEFT JOIN L_SVMAST R ON E.STRNO = R.STRNO
+    WHERE C.FLAG='7' AND C.JOBNO<>'' AND C.CANDAT IS NULL
+    AND E.REPTYPE LIKE ? AND C.RTNLOC LIKE ? AND E.REPCOD LIKE ? AND E.CAMPNO LIKE ? AND E.CUSCOD LIKE ?
+    AND ISDATE(C.CREDDT)=1 AND CONVERT(datetime,C.CREDDT) BETWEEN ? AND ? AND C.CREDNO<>''
+    GROUP BY C.JOBNO,C.CREDNO,C.CREDDT,E.RECVDATE,E.REPTYPE,E.CUSCOD,E.MDLCOD,E.STRNO,E.RLKILOMT,E.CAMPNO,E.STATUS,B.PTYPE,R.REGNO,E.VATTYPE,E.VAT
+) XX
+LEFT JOIN CUSTMAST B ON XX.CUSCOD=B.CUSCOD
+WHERE XX.JOBNO<>''
+ORDER BY XX.JOBNO, XX.FLAG
+"""
+
+# คอลัมน์ที่ map เป็นภาษาไทย สำหรับหน้า check-status
+CLAIM_COLUMN_DISPLAY = {
+    "JOBNO": "รหัสงาน",
+    "TAXNO": "เลขที่ใบกำกับ",
+    "TAXDATE": "วันที่",
+    "CUSNAM": "ชื่อลูกค้า",
+    "MDLCOD": "รุ่น",
+    "STRNO": "เลขตัวถัง",
+    "SERVNET": "ค่าแรง",
+    "SERVCOS": "ต้นทุนค่าแรง",
+    "SERVPRF": "กำไรค่าแรง",
+    "PARTNET": "ค่าอะไหล่",
+    "PARTCOS": "ต้นทุนอะไหล่",
+    "PARTPRF": "กำไรอะไหล่",
+    "OILNET": "ค่าน้ำมัน",
+    "OILCOS": "ต้นทุนน้ำมัน",
+    "OILPRF": "กำไรน้ำมัน",
+    "OUTNET": "งานนอก",
+    "OUTCOS": "ต้นทุนงานนอก",
+    "OUTPRF": "กำไรงานนอก",
+    "COLRNET": "งานสี",
+    "COLRCOS": "ต้นทุนงานสี",
+    "COLRPRF": "กำไรงานสี",
+    "TOTALNET": "ยอดรวม",
+    "TOTALCOS": "ต้นทุนรวม",
+    "TOTALPRF": "กำไรรวม",
+    "มูลค่าก่อนVAT": "มูลค่าก่อนVAT",
+    "ภาษี": "ภาษี",
+    "ยอดรวมภาษี": "ยอดรวมภาษี",
+}
 
 
-@app.get("/check-status", response_class=HTMLResponse)
-async def check_status(request: Request):
-    """หน้าตรวจสอบสถานะตั้งเบิก (placeholder รอคำสั่งถัดไป)"""
-    return templates.TemplateResponse("check-status.html", {"request": request})
-
-
-@app.get("/api/register/options")
-async def get_register_options():
-    """
-    คืนค่าตัวเลือกสำหรับหน้าจดทะเบียน:
-    - ประเภทไฟแนนซ์, จังหวัดที่จด, แบรนด์รถ (จาก dbo.RegisterReport_2569)
-    """
+@app.get("/api/check-status/claim-report")
+async def get_claim_report(
+    startDate: str | None = Query(default=None, description="วันที่เริ่มต้น (YYYY-MM-DD)"),
+    endDate: str | None = Query(default=None, description="วันที่สิ้นสุด (YYYY-MM-DD)"),
+):
+    """ดึงข้อมูล Claim Report จาก OMODA (JOB + CN + RETURN) — ไม่ส่งวันที่ = โหลดทั้งหมด"""
+    from datetime import date
+    today = date.today().isoformat()[:10]
+    s = (startDate or "").strip()[:10]
+    e = (endDate or "").strip()[:10]
+    if s and e:
+        start, end = s, e
+        if start > end:
+            start, end = end, start
+    else:
+        # ไม่ส่งวันที่ = ใช้ช่วงกว้าง (ได้หลายร้อยแถว) — ถ้าต้องการจำนวนเท่าที่เห็นใน DB ให้ส่ง startDate/endDate จากหน้าเว็บ
+        start, end = "2025-09-01", "2026-12-31"
+    params = (
+        "%", "%", "%", "%", "%", start, end,
+        "%", "%", "%", "%", "%", start, end,
+        "%", "%", "%", "%", "%", start, end,
+    )
     try:
-        conn = get_connection()
+        conn = get_omoda_connection()
         cur = conn.cursor()
-
-        # ประเภทไฟแนนซ์ (ใช้ DISTINCT จากคอลัมน์ที่เกี่ยวข้อง ถ้าคอลัมน์ใดไม่มีจะถูกข้าม)
-        finance_values: set[str] = set()
-        for col_name in ["ไฟแนนซ์", "ชุดไฟแนนซ์"]:
-            try:
-                cur.execute(
-                    f"""
-                    SELECT DISTINCT [{col_name}]
-                    FROM [dbo].[RegisterReport_2569]
-                    WHERE [{col_name}] IS NOT NULL AND LTRIM(RTRIM([{col_name}])) <> ''
-                    """
-                )
-                for (val,) in cur.fetchall():
-                    finance_values.add(str(val).strip())
-            except Exception:
-                # ถ้าคอลัมน์นั้นไม่มี ให้ข้ามไป
-                continue
-
-        # จังหวัดที่จด
-        province_values: list[str] = []
-        try:
-            cur.execute(
-                """
-                SELECT DISTINCT [จังหวัดที่จด]
-                FROM [dbo].[RegisterReport_2569]
-                WHERE [จังหวัดที่จด] IS NOT NULL AND LTRIM(RTRIM([จังหวัดที่จด])) <> ''
-                ORDER BY [จังหวัดที่จด]
-                """
-            )
-            province_values = [str(r[0]).strip() for r in cur.fetchall()]
-        except Exception:
-            province_values = []
-
-        # แบรนด์รถ (ลองคอลัมน์ แบรนด์รถ หรือ ยี่ห้อ)
-        car_brand_values: list[str] = []
-        for col_name in ["แบรนด์รถ", "ยี่ห้อ"]:
-            try:
-                cur.execute(
-                    f"""
-                    SELECT DISTINCT [{col_name}]
-                    FROM [dbo].[RegisterReport_2569]
-                    WHERE [{col_name}] IS NOT NULL AND LTRIM(RTRIM([{col_name}])) <> ''
-                    ORDER BY [{col_name}]
-                    """
-                )
-                car_brand_values = [str(r[0]).strip() for r in cur.fetchall()]
-                break
-            except Exception:
-                continue
-
+        cur.execute(CLAIM_REPORT_SQL, params)
+        rows = cur.fetchall()
+        columns = [d[0] for d in cur.description]
         conn.close()
-        finance_list = sorted(finance_values)
+        data = []
+        for row in rows:
+            rec = {}
+            for i, col in enumerate(columns):
+                val = row[i]
+                if val is None:
+                    rec[col] = None
+                elif hasattr(val, "isoformat"):
+                    rec[col] = val.isoformat()
+                else:
+                    rec[col] = val
+            data.append(rec)
+        display_columns = []
+        for c in columns:
+            display_columns.append({"name": c, "display": CLAIM_COLUMN_DISPLAY.get(c, c)})
+        return {"ok": True, "columns": display_columns, "data": data, "total_rows": len(data)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
-        return {
-            "ok": True,
-            "finance_types": finance_list,
-            "provinces": province_values,
-            "car_brands": car_brand_values,
-        }
+
+# SQL ดึงพนักงานจาก OMODA (ตาราง OFFICER)
+OFFICER_SQL = """
+SELECT CODE, NAME, DEPCODE, LOCAT, OFFTYPE, STARID
+FROM OFFICER
+ORDER BY NAME, LOCAT, OFFTYPE
+"""
+
+
+@app.get("/api/check-status/officer")
+async def get_officer_list():
+    """ดึงข้อมูลพนักงานจาก OMODA (ตาราง OFFICER) — NAME, LOCAT, OFFTYPE"""
+    try:
+        conn = get_omoda_connection()
+        cur = conn.cursor()
+        cur.execute(OFFICER_SQL)
+        rows = cur.fetchall()
+        columns = [d[0] for d in cur.description]
+        conn.close()
+        data = []
+        for row in rows:
+            rec = {}
+            for i, col in enumerate(columns):
+                val = row[i]
+                if val is None:
+                    rec[col] = None
+                elif hasattr(val, "isoformat"):
+                    rec[col] = val.isoformat()
+                else:
+                    rec[col] = val
+            data.append(rec)
+        return {"ok": True, "data": data, "total_rows": len(data)}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -241,9 +366,6 @@ async def get_table_data(
     offset: int = Query(default=0, ge=0),
     startRegDate: str | None = Query(default=None),
     endRegDate: str | None = Query(default=None),
-    financeType: str | None = Query(default=None),
-    province: str | None = Query(default=None),
-    carBrand: str | None = Query(default=None),
     statusFilter: str | None = Query(default=None),
 ):
     """ดึงข้อมูลและชื่อคอลัมน์ของตารางที่เลือก (รองรับ pagination)"""
@@ -263,19 +385,16 @@ async def get_table_data(
         """, (schema_name, table_name))
         columns = [{"name": r[0], "type": r[1]} for r in cur.fetchall()]
 
-        # เรียงคอลัมน์ให้ แบรนด์รถ อยู่ก่อน รุ่น (ลองทั้ง แบรนด์รถ และ ยี่ห้อ)
+        # เรียงคอลัมน์ให้ ค่าแรง, ค่าอะไหล่, ค่าน้ำมัน ฯลฯ แสดงก่อน (สำหรับ RegisterReport_2569)
         if schema_name == "dbo" and table_name == "RegisterReport_2569":
+            cost_cols_order = ["ค่าแรง", "ค่าอะไหล่", "ค่าน้ำมัน", "งานนอก", "งานสี", "ยอดรวม", "มูลค่าก่อน", "กำไรรวม"]
             col_names = [c["name"] for c in columns]
-            brand_col = "แบรนด์รถ" if "แบรนด์รถ" in col_names else ("ยี่ห้อ" if "ยี่ห้อ" in col_names else None)
-            if brand_col and "รุ่น" in col_names:
-                new_columns = []
-                for c in columns:
-                    if c["name"] == brand_col:
-                        continue
-                    if c["name"] == "รุ่น":
-                        new_columns.append(next(x for x in columns if x["name"] == brand_col))
-                    new_columns.append(c)
-                columns = new_columns
+            cost_in_table = [x for x in cost_cols_order if x in col_names]
+            if cost_in_table:
+                other_cols = [c for c in columns if c["name"] not in cost_in_table]
+                cost_col_objs = [c for c in columns if c["name"] in cost_in_table]
+                cost_col_objs_sorted = sorted(cost_col_objs, key=lambda x: cost_cols_order.index(x["name"]))
+                columns = cost_col_objs_sorted + other_cols
 
         if not columns:
             conn.close()
@@ -289,17 +408,8 @@ async def get_table_data(
         params: list = []
         if schema_name == "dbo" and table_name == "RegisterReport_2569":
             where_clauses, params = _register_report_where_clauses(
-                startRegDate, endRegDate, financeType, province, statusFilter
+                startRegDate, endRegDate, statusFilter
             )
-            # กรองแบรนด์รถ (ใช้คอลัมน์ที่มีในตาราง)
-            if carBrand and str(carBrand).strip():
-                col_names = [c["name"] for c in columns]
-                if "แบรนด์รถ" in col_names:
-                    where_clauses.append("LTRIM(RTRIM([แบรนด์รถ])) = ?")
-                    params.append(str(carBrand).strip())
-                elif "ยี่ห้อ" in col_names:
-                    where_clauses.append("LTRIM(RTRIM([ยี่ห้อ])) = ?")
-                    params.append(str(carBrand).strip())
 
         where_sql = ""
         if where_clauses:
@@ -377,8 +487,6 @@ async def get_table_data(
 def _register_report_where_clauses(
     startRegDate: str | None,
     endRegDate: str | None,
-    financeType: str | None,
-    province: str | None,
     statusFilter: str | None = None,
 ) -> tuple[list[str], list]:
     """สร้าง where_clauses และ params สำหรับตาราง RegisterReport_2569 (ใช้กับ SELECT และ DELETE)"""
@@ -409,20 +517,6 @@ def _register_report_where_clauses(
             "( CAST([วันที่จด] AS DATE) <= CAST(? AS DATE) OR ([วันที่จด] IS NULL AND CAST([วันที่ใบกำกับภาษี] AS DATE) <= CAST(? AS DATE)) )"
         )
         params.extend([endRegDate.strip()[:10], endRegDate.strip()[:10]])
-
-    if financeType and financeType.strip():
-        where_clauses.append("([ไฟแนนซ์] = ? OR [ชุดไฟแนนซ์] = ?)")
-        params.append(financeType.strip())
-        params.append(financeType.strip())
-
-    if province and province.strip():
-        p = province.strip()
-        if p in ("กทม.", "กรุงเทพ", "กรุงเทพฯ", "กรุงเทพมหานคร"):
-            where_clauses.append("( LTRIM(RTRIM([จังหวัดที่จด])) IN (?, ?, ?, ?) )")
-            params.extend(["กทม.", "กรุงเทพ", "กรุงเทพฯ", "กรุงเทพมหานคร"])
-        else:
-            where_clauses.append("LTRIM(RTRIM([จังหวัดที่จด])) = ?")
-            params.append(p)
     return where_clauses, params
 
 
@@ -435,26 +529,10 @@ async def delete_register_report_by_filter(request: Request):
         raise HTTPException(status_code=400, detail="รูปแบบ JSON ไม่ถูกต้อง")
     startRegDate = (body.get("startRegDate") or "").strip()[:10] if body.get("startRegDate") else None
     endRegDate = (body.get("endRegDate") or "").strip()[:10] if body.get("endRegDate") else None
-    financeType = (body.get("financeType") or "").strip() or None
-    province = (body.get("province") or "").strip() or None
-    carBrand = (body.get("carBrand") or "").strip() or None
 
-    where_clauses, params = _register_report_where_clauses(startRegDate, endRegDate, financeType, province)
-    # กรองแบรนด์รถ (ต้องมี columns จาก table - ใช้การเช็คจาก INFORMATION_SCHEMA)
-    if carBrand:
-        conn = get_connection()
-        cur = conn.cursor()
-        cur.execute(
-            "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA='dbo' AND TABLE_NAME='RegisterReport_2569' AND COLUMN_NAME IN ('แบรนด์รถ','ยี่ห้อ')"
-        )
-        brand_cols = [r[0] for r in cur.fetchall()]
-        conn.close()
-        if brand_cols:
-            col = brand_cols[0]
-            where_clauses.append(f"LTRIM(RTRIM([{col}])) = ?")
-            params.append(carBrand)
+    where_clauses, params = _register_report_where_clauses(startRegDate, endRegDate)
     if not where_clauses:
-        raise HTTPException(status_code=400, detail="ต้องระบุเงื่อนไขกรองอย่างน้อยหนึ่งอย่าง (วันที่/ไฟแนนซ์/จังหวัด)")
+        raise HTTPException(status_code=400, detail="ต้องระบุเงื่อนไขกรองอย่างน้อยหนึ่งอย่าง (ช่วงวันที่)")
 
     full_name = "[dbo].[RegisterReport_2569]"
     where_sql = " WHERE " + " AND ".join(where_clauses)
@@ -807,6 +885,11 @@ async def import_and_update_rows(schema_name: str, table_name: str, request: Req
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# เสิร์ฟ Frontend (React) เมื่อ build แล้ว มีโฟลเดอร์ frontend/dist
+if FRONTEND_DIST.is_dir():
+    app.mount("/", StaticFiles(directory=str(FRONTEND_DIST), html=True), name="frontend")
 
 
 if __name__ == "__main__":
