@@ -68,7 +68,7 @@ export default function SummaryTab({
                                     </div>
                                 </th>
                                 {MANUAL_COLS.map(c => (
-                                    <th key={c.key} className={`p-3 text-center font-bold text-slate-600 border-r border-slate-200 text-sm ${c.isNum ? 'text-orange-700' : ''}`}>
+                                    <th key={c.key} className={`p-3 text-center font-bold text-slate-600 border-r border-slate-200 text-sm whitespace-nowrap ${c.isNum ? 'text-orange-700' : ''}`}>
                                         <div className="flex items-center justify-center gap-1.5">
                                             {c.icon && (
                                                 <svg className={`w-3.5 h-3.5 flex-shrink-0 ${c.iconColor || 'text-slate-400'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
