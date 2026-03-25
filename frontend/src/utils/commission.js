@@ -149,12 +149,44 @@ export function calculateCommission({
         return sum + (rewardPerDay * d);
     }, 0);
 
-    const surplusTech = Math.abs(resultTech - totalTechRewards);
+    // Surplus/deficit caused by distributing "per-day" values using the simulated `workingDays`
+    // but each technician may have different actual `WORKDAYS`.
+    const surplusTechSigned = resultTech - totalTechRewards;
+    const surplusTech = Math.abs(surplusTechSigned);
+
+    // Auto-split the surplus/deficit into PLUS for technicians.
+    // Rule: divide `surplusTechSigned` by the number of technicians whose WORKDAYS == `workingDays`
+    // (fallback: technicians with the maximum WORKDAYS).
+    const targetDaysNum = parseFloat(workingDays) || 0;
+    const techDaysByCode = {};
+    technicians.forEach(r => {
+        techDaysByCode[r.CODE] = parseFloat(officerEdits[r.CODE]?.WORKDAYS || '0') || 0;
+    });
+
+    // Distribute only when there is an exact match for WORKDAYS.
+    // If none exists (e.g. no technician with 25 days), do not auto-fill PLUS.
+    let receiverCodes = [];
+    if (targetDaysNum > 0) {
+        receiverCodes = technicians
+            .filter(r => techDaysByCode[r.CODE] === targetDaysNum)
+            .map(r => r.CODE);
+    }
+
+    const receiverCount = receiverCodes.length;
+    // PLUS represents the surplus magnitude (always non-negative).
+    const autoPlusPerTech = receiverCount > 0 ? (surplusTech / receiverCount) : 0;
+
+    const autoPlusTechByCode = {};
+    const receiverCodeSet = new Set(receiverCodes);
+    technicians.forEach(r => {
+        autoPlusTechByCode[r.CODE] = receiverCodeSet.has(r.CODE) ? autoPlusPerTech : 0;
+    });
 
     return {
         // Active tier values (used for downstream calculations)
         activeTotal, activeTier, perUnit, totalUnitsAll, uM, uT,
         resultCentral, resultTech, techRewardsMap, totalTechRewards, surplusTech,
+        autoPlusTechByCode,
         // All tier details
         commL100, commP100, total100, meetsTarget100,
         commL90, commP90, total90, meetsTarget90,

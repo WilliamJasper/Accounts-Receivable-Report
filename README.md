@@ -39,7 +39,7 @@ npm install
    ```bash
    python app.py
    ```
-   หรือ `uvicorn app:app --reload --port 8000`
+   หรือ `python -m uvicorn app:app --reload --port 8000`
 
 2. **รัน Frontend (พอร์ต 5173):**
    ```bash

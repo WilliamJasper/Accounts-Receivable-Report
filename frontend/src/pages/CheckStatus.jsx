@@ -58,7 +58,7 @@ export default function CheckStatus() {
     });
   }, [targetYear, setMonthlyTargetsMap]);
   const [commissionNote, setCommissionNote] = useLocalStorage('commission_note', '');
-  const [workingDays, setWorkingDays] = useLocalStorage('working_days', '');
+  const [workingDays, setWorkingDays] = useLocalStorage('working_days', '0');
 
   const periodKey = `${claimStartDate || 'all'}_${claimEndDate || 'all'}`;
 
@@ -363,6 +363,7 @@ export default function CheckStatus() {
           loaded={loaded}
           periodKey={periodKey}
           setOfficerEditsMap={setOfficerEditsMap}
+          workingDays={workingDays}
         />
       )}
 

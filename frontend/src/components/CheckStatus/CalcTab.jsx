@@ -416,10 +416,20 @@ function CommissionBreakdown({ commissionCalc, officerData, officerEdits, workin
                                     วันละ /
                                     <input
                                         type="number"
+                                        step={1}
+                                        min={0}
+                                        max={31}
                                         className="w-16 mx-1 border border-gray-800 rounded px-1 py-0.5 text-center bg-white text-slate-800 font-bold focus:ring-1 focus:ring-orange-500"
-                                        value={workingDays || ''}
+                                        value={workingDays === '' || workingDays == null ? '0' : workingDays}
                                         placeholder=""
-                                        onChange={(e) => setWorkingDays(e.target.value)}
+                                        onChange={(e) => {
+                                            const raw = e.target.value;
+                                            if (raw === '') return setWorkingDays('0');
+                                            const n = parseFloat(raw);
+                                            if (Number.isNaN(n)) return setWorkingDays('0');
+                                            const next = n > 31 ? 31 : n;
+                                            return setWorkingDays(String(next));
+                                        }}
                                     />
                                     วันทำงาน
                                 </div>

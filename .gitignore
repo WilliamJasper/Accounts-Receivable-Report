@@ -1,6 +1,8 @@
-# Environments
+# Environments — อย่า commit ไฟล์ที่มีรหัส/connection จริง (ใช้ .env.example เป็นตัวอย่างเท่านั้น)
 .env
 .env.local
+.env.development
+.env.production
 .env.*.local
 venv/
 env/
