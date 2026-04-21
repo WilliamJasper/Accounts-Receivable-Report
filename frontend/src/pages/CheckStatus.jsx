@@ -158,6 +158,49 @@ export default function CheckStatus() {
     monthlySummary,
   }), [loaded, monthlySummary, monthlyTargets, officerData, officerEdits, workingDays, cashIncomeRows, accIncomeRows, claimStartDate]);
 
+  const autoTechnicianSummary = useMemo(() => {
+    if (!loaded || !commissionCalc) return [];
+    const technicians = officerData.filter(r =>
+      String(r.OFFTYPE || '').trim().toUpperCase() === 'SV' &&
+      String(r.STARID || '').trim().toUpperCase() !== 'MG'
+    );
+    const techRewardsMap = commissionCalc?.techRewardsMap || {};
+    const autoPlusTechByCode = commissionCalc?.autoPlusTechByCode || {};
+
+    const getPlusValue = (code) => {
+      const raw = officerEdits[code]?.PLUS;
+      if (raw != null && String(raw).trim() !== '') {
+        const n = parseFloat(String(raw));
+        return isNaN(n) ? 0 : n;
+      }
+      return autoPlusTechByCode[code] || 0;
+    };
+
+    return technicians.map(row => {
+      const u = parseFloat(officerEdits[row.CODE]?.UNIT || '0') || 0;
+      const d = parseFloat(officerEdits[row.CODE]?.WORKDAYS || '0') || 0;
+      const reward = (techRewardsMap[u.toFixed(2)] || 0) * d;
+      const promo = parseFloat(officerEdits[row.CODE]?.PROMO || '0') || 0;
+      const plus = getPlusValue(row.CODE);
+      const minus = parseFloat(officerEdits[row.CODE]?.MINUS || '0') || 0;
+      const saving = (reward + promo + plus) * 0.1;
+      const net = (reward + promo) - minus - saving + plus;
+
+      return {
+        id: `auto-${row.CODE}`,
+        code: row.CODE,
+        name: row.NAME,
+        pos: row.OFFTYPE,
+        comm: reward,
+        promo,
+        plus,
+        saving,
+        net,
+        isAuto: true
+      };
+    });
+  }, [loaded, commissionCalc, officerData, officerEdits]);
+
   // ── Data Loading ──
   const loadData = useCallback(async () => {
     setError('');
@@ -373,6 +416,7 @@ export default function CheckStatus() {
           addSummaryRow={addSummaryRow}
           removeSummaryRow={removeSummaryRow}
           updateSummaryRow={updateSummaryRow}
+          autoTechnicianSummary={autoTechnicianSummary}
         />
       )}
     </div>

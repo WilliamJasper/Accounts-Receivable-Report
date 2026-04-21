@@ -27,11 +27,22 @@ export default function OfficerTab({
     const techRewardsMap = commissionCalc?.techRewardsMap || {};
     const autoPlusTechByCode = commissionCalc?.autoPlusTechByCode || {};
 
+    const getPlusValue = (rowCode, isTechGroup) => {
+        const raw = officerEdits[rowCode]?.PLUS;
+        if (raw != null && String(raw).trim() !== '') {
+            const n = parseFloat(String(raw));
+            return isNaN(n) ? 0 : n;
+        }
+        return isTechGroup ? (autoPlusTechByCode[rowCode] || 0) : 0;
+    };
+
     const managerSummary = managers.reduce((acc, row) => {
         const u = parseFloat(officerEdits[row.CODE]?.UNIT || '0') || 0;
         const reward = u * perUnit;
+        const promo = parseFloat(officerEdits[row.CODE]?.PROMO || '0') || 0;
+        const plus = getPlusValue(row.CODE, false);
         acc.units += u;
-        acc.money += reward;
+        acc.money += reward + promo + plus;
         return acc;
     }, { units: 0, money: 0 });
 
@@ -40,9 +51,10 @@ export default function OfficerTab({
         const d = parseFloat(officerEdits[row.CODE]?.WORKDAYS || '0') || 0;
         const rewardPerDay = techRewardsMap[u.toFixed(2)] || 0;
         const reward = rewardPerDay * d;
-        const plus = autoPlusTechByCode[row.CODE] || 0;
+        const promo = parseFloat(officerEdits[row.CODE]?.PROMO || '0') || 0;
+        const plus = getPlusValue(row.CODE, true);
         acc.units += u;
-        acc.money += reward + plus; // เงินรางวัลรวมของช่าง = REWARD + PLUS
+        acc.money += reward + promo + plus;
         return acc;
     }, { units: 0, money: 0 });
 
@@ -98,25 +110,14 @@ export default function OfficerTab({
         const autoPlusTechByCode = commissionCalc?.autoPlusTechByCode || {};
         const isTechGroup = !isManagerGroup;
 
-        const getPlusValue = (code) => {
-            if (!isTechGroup) {
-                const raw = officerEdits[code]?.PLUS;
-                if (raw == null || String(raw).trim() === '') return 0;
-                const n = parseFloat(String(raw));
-                return isNaN(n) ? 0 : n;
-            }
-            // Technician PLUS is auto-calculated and locked.
-            return autoPlusTechByCode[code] || 0;
-        };
-
         const getPlusInputValue = (code) => {
-            if (!isTechGroup) {
-                const raw = officerEdits[code]?.PLUS;
-                if (raw == null || String(raw).trim() === '') return '';
-                return raw;
+            const raw = officerEdits[code]?.PLUS;
+            if (raw != null && String(raw).trim() !== '') return raw;
+            if (isTechGroup) {
+                const auto = autoPlusTechByCode[code] || 0;
+                return auto === 0 ? '' : auto.toFixed(2);
             }
-            const auto = autoPlusTechByCode[code] || 0;
-            return auto === 0 ? '' : auto.toFixed(2);
+            return '';
         };
 
         const totals = data.reduce((acc, row) => {
@@ -124,10 +125,12 @@ export default function OfficerTab({
             const d = parseFloat(officerEdits[row.CODE]?.WORKDAYS || '0') || 0;
             const reward = isManagerGroup ? (u * perUnit) : ((commissionCalc?.techRewardsMap[u.toFixed(2)] || 0) * d);
             const promo = parseFloat(officerEdits[row.CODE]?.PROMO || '0') || 0;
-            const plus = getPlusValue(row.CODE);
+            const plus = getPlusValue(row.CODE, isTechGroup);
             const minus = parseFloat(officerEdits[row.CODE]?.MINUS || '0') || 0;
-            const saving = parseFloat(officerEdits[row.CODE]?.SAVING || '0') || 0;
-            const net = reward + promo + plus - minus - saving;
+            // หักสะสม 10% = (รางวัล + ส่งเสริม + บวกเพิ่ม) * 10/100
+            const saving = (reward + promo + plus) * 0.1;
+            // รวมสุทธิ = (รางวัล + ส่งเสริม) - หัก - หักสะสม 10% + บวกเพิ่ม
+            const net = (reward + promo) - minus - saving + plus;
 
             acc.units += u;
             acc.rewards += reward;
@@ -151,7 +154,7 @@ export default function OfficerTab({
                             รวมหน่วย: {totals.units.toLocaleString('th-TH', { minimumFractionDigits: 2 })}
                         </span>
                         <span className="text-sm font-semibold text-blue-600 bg-blue-50 px-3 py-1 rounded-full border border-blue-100">
-                            {/* ยังไม่ต้องคำนวณ/แสดงรวมสุทธิ */}
+                            รวมสุทธิ: {formatNum(totals.net)}
                         </span>
                         <span className="text-sm font-semibold text-gray-400 bg-gray-50 px-3 py-1 rounded-full">
                             {data.length.toLocaleString()} คน
@@ -191,39 +194,36 @@ export default function OfficerTab({
                                 </tr>
                             ) : (
                                 <>
-                                    {data.map((row, idx) => (
-                                        <tr key={idx} className="even:bg-gray-50/50 hover:bg-orange-50/30 transition-colors">
-                                            <td className="border-t border-gray-100 p-3 text-center text-gray-500 text-sm">
-                                                {(idx + 1).toLocaleString()}
-                                            </td>
-                                            {OFFICER_COLUMNS.map((c) => (
-                                                <td key={c.key} className={`border-t border-gray-100 p-2 text-slate-700 text-sm ${c.key === 'NAME' ? 'whitespace-nowrap min-w-[180px]' : ''}`}>
-                                                    {c.editable ? (
-                                                        c.key === 'REWARD' ? (
-                                                            <div className="w-24 px-2 py-1 border border-blue-200 rounded text-right bg-blue-50 font-semibold text-blue-700">
-                                                                {(() => {
-                                                                    const u = parseFloat(officerEdits[row.CODE]?.UNIT || '0') || 0;
-                                                                    if (isManagerGroup) {
-                                                                        return formatNum(u * perUnit);
-                                                                    } else {
-                                                                        const d = parseFloat(officerEdits[row.CODE]?.WORKDAYS || '0') || 0;
-                                                                        const rewardPerDay = commissionCalc?.techRewardsMap[u.toFixed(2)] || 0;
-                                                                        return formatNum(rewardPerDay * d);
-                                                                    }
-                                                                })()}
-                                                            </div>
-                                                        ) : (
-                                                            <div className="flex flex-col gap-1">
-                                                                {c.key === 'PLUS' && isTechGroup ? (
-                                                                    <input
-                                                                        type="text"
-                                                                        readOnly
-                                                                        className="w-24 px-2 py-1 border rounded bg-gray-100 border-gray-200 text-right font-semibold text-slate-700 cursor-not-allowed"
-                                                                        value={getPlusInputValue(row.CODE)}
-                                                                        placeholder="0.00"
-                                                                    />
-                                                                ) : (
-                                                                    c.key === 'WORKDAYS' && isTechGroup && calcWorkingDaysNum != null ? (
+                                    {data.map((row, idx) => {
+                                        const u = parseFloat(officerEdits[row.CODE]?.UNIT || '0') || 0;
+                                        const d = parseFloat(officerEdits[row.CODE]?.WORKDAYS || '0') || 0;
+                                        const reward = isManagerGroup ? (u * perUnit) : ((commissionCalc?.techRewardsMap[u.toFixed(2)] || 0) * d);
+                                        const promo = parseFloat(officerEdits[row.CODE]?.PROMO || '0') || 0;
+                                        const plus = getPlusValue(row.CODE, isTechGroup);
+                                        const minus = parseFloat(officerEdits[row.CODE]?.MINUS || '0') || 0;
+                                        const saving = (reward + promo + plus) * 0.1;
+                                        // รวมสุทธิ = (รางวัล + ส่งเสริม) - หัก - หักสะสม 10% + บวกเพิ่ม
+                                        const net = (reward + promo) - minus - saving + plus;
+
+                                        return (
+                                            <tr key={idx} className="even:bg-gray-50/50 hover:bg-orange-50/30 transition-colors">
+                                                <td className="border-t border-gray-100 p-3 text-center text-gray-500 text-sm">
+                                                    {(idx + 1).toLocaleString()}
+                                                </td>
+                                                {OFFICER_COLUMNS.map((c) => (
+                                                    <td key={c.key} className={`border-t border-gray-100 p-2 text-slate-700 text-sm ${c.key === 'NAME' ? 'whitespace-nowrap min-w-[180px]' : ''}`}>
+                                                        {c.editable ? (
+                                                            c.key === 'REWARD' ? (
+                                                                <div className="w-24 px-2 py-1 border border-blue-200 rounded text-right bg-blue-50 font-semibold text-blue-700">
+                                                                    {formatNum(reward)}
+                                                                </div>
+                                                            ) : c.key === 'SAVING' ? (
+                                                                <div className="w-24 px-2 py-1 border border-pink-200 rounded text-right bg-pink-50 font-semibold text-pink-700">
+                                                                    {formatNum(saving)}
+                                                                </div>
+                                                            ) : (
+                                                                <div className="flex flex-col gap-1">
+                                                                    {c.key === 'WORKDAYS' && isTechGroup && calcWorkingDaysNum != null ? (
                                                                         <input
                                                                             type="number"
                                                                             step={1}
@@ -262,21 +262,21 @@ export default function OfficerTab({
                                                                             onChange={(e) => handleEdit(row.CODE, c.key, e.target.value)}
                                                                             placeholder={c.key === 'SIGN' ? 'ชื่อผู้รับเงิน...' : '0.00'}
                                                                         />
-                                                                    )
-                                                                )}
+                                                                    )}
+                                                                </div>
+                                                            )
+                                                        ) : c.key === 'NET' ? (
+                                                            <div className="w-24 px-2 py-1 border border-green-200 rounded text-right bg-green-50 font-bold text-green-700">
+                                                                {formatNum(net)}
                                                             </div>
-                                                        )
-                                                    ) : c.key === 'NET' ? (
-                                                        <div className="w-24 px-2 py-1 border border-green-200 rounded text-right bg-green-50 font-bold text-green-700">
-                                                            {/* เว้นว่างไว้ก่อนตามที่ต้องการ */}
-                                                        </div>
-                                                    ) : (
-                                                        row[c.key] != null ? String(row[c.key]) : '-'
-                                                    )}
-                                                </td>
-                                            ))}
-                                        </tr>
-                                    ))}
+                                                        ) : (
+                                                            row[c.key] != null ? String(row[c.key]) : '-'
+                                                        )}
+                                                    </td>
+                                                ))}
+                                            </tr>
+                                        );
+                                    })}
                                     <tr className="bg-slate-100 font-bold">
                                         <td className="p-3 text-center border-t border-gray-300">
                                             <svg className="w-4 h-4 text-orange-500 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z" /></svg>
@@ -298,9 +298,11 @@ export default function OfficerTab({
                                                 ) : c.key === 'MINUS' ? (
                                                     <div className="text-right text-red-600">({totals.minus.toLocaleString('th-TH', { minimumFractionDigits: 2 })})</div>
                                                 ) : c.key === 'SAVING' ? (
-                                                    <div className="text-right text-red-600">({totals.saving.toLocaleString('th-TH', { minimumFractionDigits: 2 })})</div>
+                                                    <div className="text-right text-pink-600">({totals.saving.toLocaleString('th-TH', { minimumFractionDigits: 2 })})</div>
                                                 ) : c.key === 'NET' ? (
-                                                    <div className="text-right text-green-600 font-black"></div>
+                                                    <div className="text-right text-green-600 font-black">
+                                                        {totals.net.toLocaleString('th-TH', { minimumFractionDigits: 2 })}
+                                                    </div>
                                                 ) : c.key === 'NAME' ? (
                                                     <span className="text-slate-600">{isManagerGroup ? 'รวมทั้งหมดผู้จัดการ' : 'รวมทั้งหมดช่างเทคนิค'}</span>
                                                 ) : null}

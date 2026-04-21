@@ -3,11 +3,30 @@ import { MANUAL_COLS } from '../../utils/constants';
 
 /**
  * SummaryTab — Manual Commission Summary tab with section headers support
- */
-export default function SummaryTab({
+ */export default function SummaryTab({
     manualSummary, addSummaryRow, removeSummaryRow, updateSummaryRow,
+    autoTechnicianSummary = [],
 }) {
-    const grandTotals = manualSummary.reduce((acc, r) => {
+    // 1. Mandatory Header Row
+    const headerRow = { id: 'auto-header', type: 'header', title: '', isAuto: true };
+
+    // 2. Automated Technician Rows (mapped to manual row format)
+    const techRows = autoTechnicianSummary.map(t => ({
+        ...t,
+        type: 'row',
+        comm: String(t.comm || '0'),
+        promo: String(t.promo || '0'),
+        plus: String(t.plus || '0'),
+        saving: String(t.saving || '0'),
+        net: String(t.net || '0'),
+        csRefund: '0',
+        csDebt: '0'
+    }));
+
+    // 3. Combined List
+    const allRows = [headerRow, ...techRows, ...manualSummary];
+
+    const grandTotals = allRows.reduce((acc, r) => {
         if (r.type === 'header') return acc;
         acc.comm += parseFloat(r.comm || 0) || 0;
         acc.promo += parseFloat(r.promo || 0) || 0;
@@ -16,12 +35,15 @@ export default function SummaryTab({
         acc.csDebt += parseFloat(r.csDebt || 0) || 0;
         acc.saving += parseFloat(r.saving || 0) || 0;
 
-        const net = (parseFloat(r.comm || 0) || 0) +
-            (parseFloat(r.promo || 0) || 0) +
-            (parseFloat(r.plus || 0) || 0) +
-            (parseFloat(r.csRefund || 0) || 0) -
-            (parseFloat(r.csDebt || 0) || 0) -
-            (parseFloat(r.saving || 0) || 0);
+        const commVal = parseFloat(r.comm || 0) || 0;
+        const promoVal = parseFloat(r.promo || 0) || 0;
+        const plusVal = parseFloat(r.plus || 0) || 0;
+        const refundVal = parseFloat(r.csRefund || 0) || 0;
+        const debtVal = parseFloat(r.csDebt || 0) || 0;
+        const savingVal = parseFloat(r.saving || 0) || 0;
+
+        // สูตร: (Comm + Promo) - Debt - Saving + Plus + Refund
+        const net = (commVal + promoVal) - debtVal - savingVal + plusVal + refundVal;
         acc.net += net;
         return acc;
     }, { comm: 0, promo: 0, plus: 0, csRefund: 0, csDebt: 0, saving: 0, net: 0 });
@@ -34,7 +56,7 @@ export default function SummaryTab({
                         <svg className="w-6 h-6 text-orange-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                         </svg>
-                        หน้าสรุปยอดจ่ายค่าคอมมิชชัน (Manual Entry)
+                        หน้าสรุปยอดจ่ายค่าคอมมิชชัน
                     </h2>
                     <div className="flex gap-2">
                         <button
@@ -88,7 +110,7 @@ export default function SummaryTab({
                             </tr>
                         </thead>
                         <tbody>
-                            {manualSummary.map((row, idx) => {
+                            {allRows.map((row, idx) => {
                                 if (row.type === 'header') {
                                     return (
                                         <tr key={row.id} className="bg-orange-100/60 border-b-2 border-orange-200 shadow-sm">
@@ -103,35 +125,40 @@ export default function SummaryTab({
                                                 />
                                             </td>
                                             <td className="p-2 text-center bg-orange-50/50">
-                                                <button
-                                                    onClick={() => removeSummaryRow(row.id)}
-                                                    className="text-orange-400 hover:text-red-500 transition-colors"
-                                                    title="ลบหัวข้อตารางนี้"
-                                                >
-                                                    <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-                                                        <path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clipRule="evenodd" />
-                                                    </svg>
-                                                </button>
+                                                {!row.isAuto && (
+                                                    <button
+                                                        onClick={() => removeSummaryRow(row.id)}
+                                                        className="text-orange-400 hover:text-red-500 transition-colors"
+                                                        title="ลบหัวข้อตารางนี้"
+                                                    >
+                                                        <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                                                            <path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clipRule="evenodd" />
+                                                        </svg>
+                                                    </button>
+                                                )}
                                             </td>
                                         </tr>
                                     );
                                 }
 
-                                const rowNet = (parseFloat(row.comm || 0) || 0) +
-                                    (parseFloat(row.promo || 0) || 0) +
-                                    (parseFloat(row.plus || 0) || 0) +
-                                    (parseFloat(row.csRefund || 0) || 0) -
-                                    (parseFloat(row.csDebt || 0) || 0) -
-                                    (parseFloat(row.saving || 0) || 0);
+                                const commVal = parseFloat(row.comm || 0) || 0;
+                                const promoVal = parseFloat(row.promo || 0) || 0;
+                                const plusVal = parseFloat(row.plus || 0) || 0;
+                                const refundVal = parseFloat(row.csRefund || 0) || 0;
+                                const debtVal = parseFloat(row.csDebt || 0) || 0;
+                                const savingVal = parseFloat(row.saving || 0) || 0;
+
+                                // สูตร: (Comm + Promo) - Debt - Saving + Plus + Refund
+                                const rowNet = (commVal + promoVal) - debtVal - savingVal + plusVal + refundVal;
 
                                 return (
-                                    <tr key={row.id} className="hover:bg-orange-50/30 transition-colors border-b border-slate-100">
+                                    <tr key={row.id} className={`hover:bg-orange-50/30 transition-colors border-b border-slate-100 ${row.isAuto ? 'bg-blue-50/20' : ''}`}>
                                         <td className="p-2 text-center text-slate-400 font-medium border-r border-slate-100">{idx + 1}</td>
                                         {MANUAL_COLS.map(c => (
                                             <td key={c.key} className="p-1 border-r border-slate-100">
-                                                {c.readOnly ? (
-                                                    <div className={`px-2 py-1.5 font-bold text-slate-800 text-right ${rowNet >= 0 ? 'text-green-600' : 'text-red-500'}`}>
-                                                        {formatNum(rowNet)}
+                                                {(c.readOnly || row.isAuto) ? (
+                                                    <div className={`px-2 py-1.5 font-bold text-slate-800 ${c.isNum ? 'text-right' : 'text-left'} ${c.key === 'net' ? (rowNet >= 0 ? 'text-green-600' : 'text-red-500') : ''}`}>
+                                                        {c.isNum ? formatNum(c.key === 'net' ? rowNet : row[c.key]) : (row[c.key] || '')}
                                                     </div>
                                                 ) : (
                                                     <input
@@ -145,14 +172,16 @@ export default function SummaryTab({
                                             </td>
                                         ))}
                                         <td className="p-2 text-center bg-slate-50">
-                                            <button
-                                                onClick={() => removeSummaryRow(row.id)}
-                                                className="text-red-300 hover:text-red-500 transition-colors"
-                                            >
-                                                <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-                                                    <path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clipRule="evenodd" />
-                                                </svg>
-                                            </button>
+                                            {!row.isAuto && (
+                                                <button
+                                                    onClick={() => removeSummaryRow(row.id)}
+                                                    className="text-red-300 hover:text-red-500 transition-colors"
+                                                >
+                                                    <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                                                        <path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clipRule="evenodd" />
+                                                    </svg>
+                                                </button>
+                                            )}
                                         </td>
                                     </tr>
                                 );
